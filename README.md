@@ -77,7 +77,8 @@
 
    - **Enter Stock Ticker**: Provide the ticker symbol (e.g., `AAPL` for Apple Inc.).
    - **Optuna Hyperparameter Optimization**: Choose whether to run hyperparameter tuning (`y/n`).
-   - **Display Graph**: Decide if you want to visualize the backtest results (`y/n`).
+           (This can take a while, However it drastically improves predictions.)
+   - **Display Graph**: Decide if you want to visualize the backtest results with graphs (`y/n`).
 
 3. **View Results**
 
