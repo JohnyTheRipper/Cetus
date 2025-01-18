@@ -1,4 +1,3 @@
-```markdown
 # Cetus Enhanced: Transformer-Based Stock Price Predictor
 
 ![Cetus Logo](https://your-repo-url.com/logo.png) <!-- Replace with your logo or remove if not applicable -->
