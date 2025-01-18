@@ -184,7 +184,7 @@ Data Scientist & Developer
 | [GitHub](https://github.com/JohnyTheRipper) |
 
 ---
-```
-*Disclaimer: This project is for educational and informational purposes only. It is not intended as financial advice. Always conduct your own research or consult with a financial professional before making investment decisions.*
-```
+
+***Disclaimer***: This project is for educational and informational purposes only. It is not intended as financial advice. Always conduct your own research or consult with a financial professional before making investment decisions.*
+
 
