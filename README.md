@@ -47,13 +47,12 @@
 
    ```bash
    git clone https://github.com/your-username/cetus-enhanced.git
-   cd cetus-enhanced
    ```
 
 2. **Create a Virtual Environment**
 
    ```bash
-   python3 -m venv venv
+   python3.8 -m venv py38
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
@@ -62,6 +61,7 @@
    Ensure you have `pip` installed, then run:
 
    ```bash
+   cd cetus-enhanced
    pip install -r requirements.txt
    ```
 
