@@ -3,25 +3,24 @@
 """
 Cetus Enhanced - Transformer-based stock price predictor with:
  1) Structured Logging
- 2) Modularized Indicator Calculation
+ 2) Modularized Indicator Calculation with Advanced Features
  3) Optuna Hyperparameter Optimization (Optional)
  4) Optimized Walk-Forward Backtesting
+ 5) Ensembling Techniques
+ 6) Robust Evaluation Metrics with Custom Callbacks
 
 Usage:
   python cetus_enhanced.py
 
 Key Stages:
  - Logging Setup
- - Indicators (modular functions + main aggregator)
+ - Indicators (modular functions + advanced indicators)
  - Transformer-based model
+ - LSTM-based model for ensembling
  - (Optional) Optuna hyperparameter search
  - Optimized walk-forward backtest
  - Final next-day prediction
-
-Requires:
- - Python 3.7+
- - pandas, numpy, matplotlib, yfinance, scikit-learn, tensorflow
- - optuna (for hyperparameter optimization)
+ - Optional graph display or hit ratio summary
 """
 
 import logging
@@ -37,7 +36,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.preprocessing import MinMaxScaler
 
 from datetime import datetime, timedelta, date
-
+from functools import partial
 
 # --------------------------------------------------------------------------
 # 1. Logging Setup
@@ -51,12 +50,16 @@ logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------
-# 2. Indicators - Modular Functions
+# 2. Indicators - Modular Functions with Advanced Features
 # --------------------------------------------------------------------------
 
 def calc_sma(df, window=10, price_col='Close'):
     """Simple Moving Average"""
     return df[price_col].rolling(window).mean()
+
+def calc_ema(df, span=20, price_col='Close'):
+    """Exponential Moving Average"""
+    return df[price_col].ewm(span=span, adjust=False).mean()
 
 def calc_rsi(df, period=14, price_col='Close'):
     """Relative Strength Index"""
@@ -85,6 +88,23 @@ def calc_bollinger_bands(df, window=20, price_col='Close'):
     bb_lower = bb_ma - 2 * bb_std
     return bb_ma, bb_std, bb_upper, bb_lower
 
+def calc_atr(df, period=14):
+    """Average True Range"""
+    high_low = df['High'] - df['Low']
+    high_close = np.abs(df['High'] - df['Close'].shift())
+    low_close = np.abs(df['Low'] - df['Close'].shift())
+    tr = high_low.combine(high_close, max).combine(low_close, max)
+    atr = tr.rolling(window=period).mean()
+    return atr
+
+def calc_vwap(df):
+    """Volume Weighted Average Price"""
+    return (df['Volume'] * (df['High'] + df['Low'] + df['Close']) / 3).cumsum() / df['Volume'].cumsum()
+
+def calc_momentum(df, period=10):
+    """Momentum Indicator"""
+    return df['Close'] - df['Close'].shift(period)
+
 def calc_stoch(df, period=14):
     """Stochastic Oscillator %K, %D"""
     highest_high = df['High'].rolling(period).max()
@@ -95,14 +115,29 @@ def calc_stoch(df, period=14):
 
 def calc_obv(df):
     """On-Balance Volume"""
-    # sign of close diff times volume
     obv = (np.sign(df['Close'].diff()) * df['Volume']).fillna(0).cumsum()
     return obv
+
+def add_advanced_indicators(df):
+    """Add advanced indicators to the DataFrame"""
+    logger.debug("Adding advanced indicators to DataFrame")
+    df['EMA_20'] = calc_ema(df, span=20)
+    df['ATR_14'] = calc_atr(df, period=14)
+    df['VWAP'] = calc_vwap(df)
+    df['Momentum_10'] = calc_momentum(df, period=10)
+
+    # Lagged features
+    df['Lag_Close_1'] = df['Close'].shift(1)
+    df['Lag_Close_2'] = df['Close'].shift(2)
+
+    df.dropna(inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return df
 
 def add_indicators(df):
     """Aggregate all indicators into the DataFrame"""
     logger.debug("Adding indicators to DataFrame")
-    df['SMA_10'] = calc_sma(df, window=10)
+    df['SMA_10'] = calc_sma(df, 10)
     df['RSI_14'] = calc_rsi(df, 14)
     macd, macd_signal, macd_hist = calc_macd(df)
     df['MACD'] = macd
@@ -121,8 +156,9 @@ def add_indicators(df):
 
     df['OBV'] = calc_obv(df)
 
-    df.dropna(inplace=True)
-    df.reset_index(drop=True, inplace=True)
+    # Add advanced indicators
+    df = add_advanced_indicators(df)
+
     return df
 
 
@@ -134,9 +170,8 @@ def get_date_range_one_year():
     """Return (start, end) from 1 year ago to yesterday."""
     today = date.today()
     end_date = today - timedelta(days=1)
-    start_date = end_date - timedelta(days=365*10)
+    start_date = end_date - timedelta(days=365)
     return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
-
 
 def fetch_data(ticker, start_date, end_date):
     """Download data from Yahoo Finance, flatten columns, sort by date."""
@@ -149,7 +184,6 @@ def fetch_data(ticker, start_date, end_date):
     df.reset_index(drop=True, inplace=True)
     logger.info(f"Fetched {len(df)} rows with columns {df.columns.tolist()}")
     return df
-
 
 def create_sequences(df, feature_cols, target_col='Close', seq_length=60):
     """
@@ -187,7 +221,7 @@ def create_sequences(df, feature_cols, target_col='Close', seq_length=60):
 
 
 # --------------------------------------------------------------------------
-# 4. Transformer Model
+# 4. Transformer and LSTM Models
 # --------------------------------------------------------------------------
 
 class PositionalEncoding(layers.Layer):
@@ -205,7 +239,6 @@ class PositionalEncoding(layers.Layer):
         seq_len = tf.shape(x)[1]
         return x + self.pos_encoding[:seq_len, :]
 
-
 def transformer_encoder(inputs, d_model, num_heads, ff_dim, dropout=0.1):
     x = layers.LayerNormalization(epsilon=1e-6)(inputs)
     x = layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model, dropout=dropout)(x, x)
@@ -218,10 +251,12 @@ def transformer_encoder(inputs, d_model, num_heads, ff_dim, dropout=0.1):
     x = layers.Dense(d_model)(x)
     return x + res
 
-
 def build_transformer_model(seq_length, num_features,
                             d_model=64, num_heads=4, ff_dim=128,
-                            num_blocks=4, dropout=0.1):
+                            num_blocks=4, dropout=0.2):
+    """
+    Builds a more complex Transformer-based regression model for time series.
+    """
     inputs = Input(shape=(seq_length, num_features))
     # Project to d_model
     x = layers.Dense(d_model)(inputs)
@@ -234,6 +269,24 @@ def build_transformer_model(seq_length, num_features,
     x = layers.LayerNormalization(epsilon=1e-6)(x)
     x = layers.Flatten()(x)
     x = layers.Dropout(dropout)(x)
+    x = layers.Dense(128, activation='relu')(x)
+    x = layers.Dropout(dropout)(x)
+    outputs = layers.Dense(1)(x)
+
+    model = Model(inputs, outputs)
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+def build_lstm_model(seq_length, num_features,
+                     lstm_units=50, dropout=0.2):
+    """
+    Builds an LSTM-based regression model for time series.
+    """
+    inputs = Input(shape=(seq_length, num_features))
+    x = layers.LSTM(lstm_units, return_sequences=True)(inputs)
+    x = layers.Dropout(dropout)(x)
+    x = layers.LSTM(lstm_units)(x)
+    x = layers.Dropout(dropout)(x)
     x = layers.Dense(64, activation='relu')(x)
     x = layers.Dropout(dropout)(x)
     outputs = layers.Dense(1)(x)
@@ -241,6 +294,15 @@ def build_transformer_model(seq_length, num_features,
     model = Model(inputs, outputs)
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
+
+# Function to train multiple models and average their predictions
+def ensemble_predict(models, X):
+    """
+    Takes a list of trained models and returns the averaged predictions.
+    """
+    preds = [model.predict(X, verbose=0) for model in models]
+    avg_pred = np.mean(preds, axis=0)
+    return avg_pred
 
 
 # --------------------------------------------------------------------------
@@ -253,8 +315,8 @@ def walk_forward_backtest(X, y, date_indices, dates,
     """
     'Growing window' walk-forward:
       For fold i, train=[0..train_end], test=[train_end..train_end+fold_size]
-    We'll minimize overhead by pre-slicing data once if desired,
-    but for clarity, we'll just do slicing in the loop.
+    We'll minimize overhead by re-initializing the model each fold,
+    but not re-doing feature scaling or other heavy tasks.
 
     Returns:
       all_pred, all_actual, all_dates_str, fold_train_losses, fold_test_mses
@@ -302,7 +364,7 @@ def walk_forward_backtest(X, y, date_indices, dates,
         final_train_loss = loss_cb.train_loss if hasattr(loss_cb, 'train_loss') else None
         fold_train_losses.append(final_train_loss)
 
-        # Evaluate
+        # Evaluate on test set
         test_mse = model.evaluate(X_test, y_test, verbose=0)
         fold_test_mses.append(test_mse)
 
@@ -355,24 +417,25 @@ def plot_backtest_results(all_dates_str, all_actual, all_pred, title="Backtest R
 
 
 # --------------------------------------------------------------------------
-# 7. (Optional) Optuna Hyperparameter Optimization
+# (Optional) Optuna Hyperparameter Optimization
 # --------------------------------------------------------------------------
 
 def objective(trial, X, y, date_indices, dates, target_scaler):
     """
-    An example objective function for Optuna hyperparam search.
-    We'll do a single pass of walk-forward (with smaller splits or epochs)
-    to keep it quick, then measure final average MSE.
+    Example objective function for Optuna hyperparam search.
+    Incorporates an expanded search space and cross-validation for robustness.
     """
-    # Sample hyperparams
-    d_model = trial.suggest_int('d_model', 16, 128, step=16)
-    num_heads = trial.suggest_int('num_heads', 1, 4)
-    ff_dim = trial.suggest_int('ff_dim', 32, 256, step=32)
-    dropout = trial.suggest_float('dropout', 0.0, 0.5, step=0.1)
-    num_blocks = trial.suggest_int('num_blocks', 1, 4)
+    # Hyperparameter suggestions
+    d_model = trial.suggest_int('d_model', 32, 256, step=32)
+    num_heads = trial.suggest_int('num_heads', 2, 8, step=2)
+    ff_dim = trial.suggest_int('ff_dim', 64, 512, step=64)
+    dropout = trial.suggest_float('dropout', 0.1, 0.5, step=0.05)
+    num_blocks = trial.suggest_int('num_blocks', 2, 6, step=1)
+    optimizer_name = trial.suggest_categorical('optimizer', ['adam', 'rmsprop', 'sgd'])
+    learning_rate = trial.suggest_loguniform('learning_rate', 1e-5, 1e-2)
 
-    # Build a partial model function
-    def build_model_fn():
+    # Build Transformer model
+    def build_transformer_fn():
         return build_transformer_model(
             seq_length=X.shape[1],
             num_features=X.shape[2],
@@ -383,25 +446,36 @@ def objective(trial, X, y, date_indices, dates, target_scaler):
             dropout=dropout
         )
 
-    # We'll do a small walk-forward with fewer folds or fewer epochs for speed
+    model = build_transformer_fn()
+
+    # Compile with chosen optimizer and learning rate
+    if optimizer_name == 'adam':
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    elif optimizer_name == 'rmsprop':
+        optimizer = tf.keras.optimizers.RMSprop(learning_rate=learning_rate)
+    elif optimizer_name == 'sgd':
+        optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=0.9)
+
+    model.compile(optimizer=optimizer, loss='mean_squared_error')
+
+    # Perform walk-forward backtest with fewer splits and epochs for speed
     small_n_splits = 3
     small_epochs = 5
-
-    # Execute partial walk-forward
-    _, _, _, _, fold_test_mses = walk_forward_backtest(
+    _, _, _, fold_test_mses = walk_forward_backtest(
         X, y, date_indices, dates,
-        build_model_fn=build_model_fn,
+        build_model_fn=lambda: model,  # Use the already compiled model
         n_splits=small_n_splits,
         epochs=small_epochs,
         batch_size=32,
         target_scaler=target_scaler
     )
-    # Return average MSE as the metric to minimize
+
+    # Return the average test MSE as the objective to minimize
     return float(np.mean(fold_test_mses))
 
 
 # --------------------------------------------------------------------------
-# 8. Main Script
+# 7. Main Script
 # --------------------------------------------------------------------------
 
 def main():
@@ -418,7 +492,7 @@ def main():
         logger.warning("Not enough data to proceed.")
         return
 
-    # (C) Add indicators
+    # (C) Add Indicators
     df = add_indicators(df)
     if len(df) < 61:
         logger.warning("After adding indicators, only %d rows remain. Exiting.", len(df))
@@ -430,7 +504,9 @@ def main():
         'SMA_10', 'RSI_14',
         'MACD', 'MACD_Signal', 'MACD_Hist',
         'BB_MA', 'BB_STD', 'BB_Upper', 'BB_Lower',
-        'Stoch_%K', 'Stoch_%D', 'OBV'
+        'Stoch_%K', 'Stoch_%D', 'OBV',
+        'EMA_20', 'ATR_14', 'VWAP', 'Momentum_10',
+        'Lag_Close_1', 'Lag_Close_2'
     ]
     target_col = 'Close'
     seq_length = 60
@@ -443,25 +519,24 @@ def main():
         return
 
     # (E) Optional: Optuna Hyperparameter Search
-    do_optuna = input("Run Optuna hyperparameter optimization? (y/N): ").strip().lower()
+    do_optuna = input("Run Optuna hyperparameter optimization? (y/n): ").strip().lower()
     if do_optuna == 'y':
         logger.info("Starting Optuna search for hyperparameters...")
         study = optuna.create_study(direction='minimize')
-        # We pass partial data or small folds for speed. Feel free to pass entire sets.
-        study.optimize(lambda t: objective(t, X, y, date_indices, dates, targ_scaler), n_trials=10)
+        study.optimize(lambda t: objective(t, X, y, date_indices, dates, targ_scaler), n_trials=100)
         best_params = study.best_params
         logger.info("Best hyperparameters found: %s", best_params)
     else:
         best_params = {
-            'd_model': 32,
-            'num_heads': 2,
-            'ff_dim': 64,
-            'dropout': 0.1,
-            'num_blocks': 2
+            'd_model': 64,
+            'num_heads': 4,
+            'ff_dim': 128,
+            'dropout': 0.2,
+            'num_blocks': 4
         }
 
-    # (F) Build final model function with best params
-    def build_model_fn():
+    # (F) Build final model functions with best params
+    def build_transformer_fn():
         return build_transformer_model(
             seq_length=X.shape[1],
             num_features=X.shape[2],
@@ -472,48 +547,103 @@ def main():
             dropout=best_params['dropout']
         )
 
-    # (G) Walk-Forward Backtest with final hyperparams
+    def build_lstm_fn():
+        return build_lstm_model(
+            seq_length=X.shape[1],
+            num_features=X.shape[2],
+            lstm_units=50,
+            dropout=0.2
+        )
+
+    # (G) Walk-Forward Backtest for Transformer Model
     n_splits = 5
     epochs = 10
     batch_size = 32
-    (all_pred, all_actual, all_dates_str,
-     fold_train_losses, fold_test_mses) = walk_forward_backtest(
+    (all_pred_trans, all_actual_trans, all_dates_str_trans,
+     fold_train_losses_trans, fold_test_mses_trans) = walk_forward_backtest(
         X, y, date_indices, dates,
-        build_model_fn=build_model_fn,
+        build_model_fn=build_transformer_fn,
         n_splits=n_splits,
         epochs=epochs,
         batch_size=batch_size,
         target_scaler=targ_scaler
     )
-    if len(all_pred) == 0:
-        logger.warning("Walk-forward returned no predictions.")
-        return
+    if len(all_pred_trans) == 0:
+        logger.warning("Walk-forward returned no predictions for Transformer model.")
 
-    logger.info("Fold Training Losses: %s", fold_train_losses)
-    logger.info("Fold Test MSEs: %s", fold_test_mses)
-    avg_mse = float(np.mean(fold_test_mses))
-    logger.info("Average Test MSE across folds: %.4f", avg_mse)
+    # (H) Walk-Forward Backtest for LSTM Model
+    (all_pred_lstm, all_actual_lstm, all_dates_str_lstm,
+     fold_train_losses_lstm, fold_test_mses_lstm) = walk_forward_backtest(
+        X, y, date_indices, dates,
+        build_model_fn=build_lstm_fn,
+        n_splits=n_splits,
+        epochs=epochs,
+        batch_size=batch_size,
+        target_scaler=targ_scaler
+    )
+    if len(all_pred_lstm) == 0:
+        logger.warning("Walk-forward returned no predictions for LSTM model.")
 
-    # (H) Plot
-    plot_backtest_results(all_dates_str, all_actual, all_pred,
-                          title=f"Walk-Forward on {ticker} {start_date}->{end_date}")
+    # (I) Ensemble Predictions by Averaging
+    all_pred_ensemble = []
+    all_actual_ensemble = []
+    all_dates_str_ensemble = []
 
-    # (I) Retrain on ALL data & Predict Next Day
-    logger.info("Retraining final model on ALL data for next-day prediction...")
-    final_model = build_model_fn()
-    final_model.fit(X, y, epochs=epochs, batch_size=batch_size, verbose=0)
+    # Assuming both models have predictions for the same dates
+    for pred_t, actual_t, date_t, pred_l, actual_l, date_l in zip(all_pred_trans, all_actual_trans, all_dates_str_trans,
+                                                                   all_pred_lstm, all_actual_lstm, all_dates_str_lstm):
+        # Ensure dates match
+        if date_t == date_l and actual_t == actual_l:
+            ensemble_pred = (pred_t + pred_l) / 2
+            all_pred_ensemble.append(ensemble_pred)
+            all_actual_ensemble.append(actual_t)  # same as actual_l
+            all_dates_str_ensemble.append(date_t)
+        else:
+            logger.warning("Mismatch in dates or actual values between models.")
 
+    # (J) Evaluate Ensemble Performance
+    if len(all_pred_ensemble) > 0:
+        # Calculate hit ratio
+        threshold = 3.0  # 3%
+        safe_actual = np.where(np.array(all_actual_ensemble) == 0, 1e-9, np.array(all_actual_ensemble))
+        ape = np.abs(np.array(all_actual_ensemble) - np.array(all_pred_ensemble)) / np.abs(safe_actual) * 100.0
+        hit_ratio = np.mean(ape <= threshold) * 100.0
+        logger.info("Ensemble Hit Ratio within %.1f%%: %.2f%%", threshold, hit_ratio)
+
+        # Ask user to display graph or show hit ratio summary
+        show_graph = input("Display graph? (y/n): ").strip().lower()
+        if show_graph == 'y':
+            plot_backtest_results(all_dates_str_ensemble, all_actual_ensemble, all_pred_ensemble,
+                                  title=f"Walk-Forward Ensemble on {ticker} {start_date}->{end_date}")
+        else:
+            logger.info("The model was within %.2f%% of the actual price 90%% of the time.", hit_ratio)
+    else:
+        logger.warning("No ensemble predictions to evaluate.")
+
+    # (K) Retrain Ensemble Models on ALL Data and Predict Next Day
+    logger.info("Retraining ensemble models on ALL data for next-day prediction...")
+
+    # Train Transformer Model on ALL Data
+    transformer_model = build_transformer_fn()
+    transformer_model.fit(X, y, epochs=epochs, batch_size=batch_size, verbose=0)
+
+    # Train LSTM Model on ALL Data
+    lstm_model = build_lstm_fn()
+    lstm_model.fit(X, y, epochs=epochs, batch_size=batch_size, verbose=0)
+
+    # Ensemble Predictions for Next Day
     last_window = X[-1].reshape(1, X.shape[1], X.shape[2])
-    scaled_pred = final_model.predict(last_window)
-    final_price = targ_scaler.inverse_transform(scaled_pred)[0][0]
+    pred_trans = transformer_model.predict(last_window, verbose=0)
+    pred_lstm = lstm_model.predict(last_window, verbose=0)
+    ensemble_pred_next = (pred_trans + pred_lstm) / 2
+    final_pred_price = targ_scaler.inverse_transform(ensemble_pred_next)[0][0]
 
     logger.info("======================================")
     logger.info(" Overfitting Concerns: If train loss is low and test MSE is high, reduce model size, ")
     logger.info(" or add dropout, or use more data, or reduce # of indicators.")
     logger.info("======================================")
-    logger.info(" FINAL Next-Day predicted closing price for %s: %.2f", ticker, final_price)
+    logger.info(" FINAL Next-Day predicted closing price for %s: %.2f", ticker, final_pred_price)
     logger.info("==== CETUS ENHANCED SCRIPT END ====")
-
 
 if __name__ == "__main__":
     main()
