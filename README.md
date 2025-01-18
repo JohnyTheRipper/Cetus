@@ -178,65 +178,13 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## Contact
 
-**Your Name**  
+**Viteli Widner**  
 Data Scientist & Developer  
-[your-email@example.com](mailto:your-email@example.com)  
-[LinkedIn](https://www.linkedin.com/in/your-profile) | [GitHub](https://github.com/your-username)
+[lucaswidner1@gmail.com](mailto:lucaswidner1@gmail.com) 
+| [GitHub](https://github.com/JohnyTheRipper) |
 
 ---
 
 *Disclaimer: This project is for educational and informational purposes only. It is not intended as financial advice. Always conduct your own research or consult with a financial professional before making investment decisions.*
 
 ```
-
----
-
-### Explanation:
-
-1. **Title & Badges**: The README starts with a title and a placeholder for a logo. You can replace the logo URL with your own or remove it if not needed.
-
-2. **Table of Contents**: Provides easy navigation to different sections.
-
-3. **Overview**: A brief introduction to the project, highlighting its purpose and main technologies used.
-
-4. **Features**: Lists the key features, showcasing what makes the project robust and comprehensive.
-
-5. **Installation**: Step-by-step guide on how to set up the project, including cloning the repository, setting up a virtual environment, and installing dependencies via `requirements.txt`.
-
-6. **Usage**: Instructions on how to run the script, including what inputs to provide and what outputs to expect.
-
-7. **How It Works**: Detailed explanation divided into sub-sections, outlining each step the script performs:
-   - **Data Fetching**
-   - **Feature Engineering**
-   - **Sequence Creation**
-   - **Model Training** with further subdivisions for Transformer and LSTM models, and Ensembling.
-   - **Hyperparameter Optimization**
-   - **Walk-Forward Backtesting**
-   - **Evaluation Metrics**
-   - **Final Prediction**
-
-8. **Results**: Describes the type of output the user will receive after running the script, with an example.
-
-9. **Concerns & Disclaimers**: Important legal and practical disclaimers to inform users about the limitations and risks associated with using the model.
-
-10. **Next Steps**: Suggestions for future improvements and expansions to enhance the project’s capabilities and accuracy.
-
-11. **License**: Mentions the project's licensing, linking to a `LICENSE` file.
-
-12. **Contact**: Provides contact information for users to reach out for support or collaboration.
-
-13. **Final Disclaimer**: Reiterates that the project is for educational purposes and not financial advice.
-
-### Customization Tips:
-
-- **Links**: Replace placeholder links like `https://your-repo-url.com/logo.png`, GitHub URL, email, LinkedIn, and GitHub usernames with your actual details.
-
-- **Logo**: If you have a logo, upload it to your repository and replace the URL. If not, you can remove the image line.
-
-- **License**: Ensure you have a `LICENSE` file in your repository matching the one mentioned.
-
-- **Additional Sections**: Feel free to add sections like "Acknowledgements" or "Contributing" if you plan to open-source the project publicly.
-
-- **Screenshots**: You can add screenshots or example plots in the `Results` section to visually demonstrate the model’s performance.
-
-This `README.md` is designed to be informative and welcoming, providing all necessary details for users to understand, install, and utilize your project effectively.
